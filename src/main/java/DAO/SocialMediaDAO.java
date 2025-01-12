@@ -5,14 +5,16 @@ import Model.Message;
 import Util.ConnectionUtil;
 
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 public class SocialMediaDAO {
 
-    //HELPER METHOD FOR EARLY CHECK
+    //HELPER METHODS FOR EARLY USERNAME EXISTS CHECK
     public boolean usernameExists(String username){
         Connection connection = ConnectionUtil.getConnection();
         try{
-            String sql = "SELECT * FROM account WHERE username = ?";
+            String sql = "SELECT * FROM account WHERE username=?";
 
             PreparedStatement preparedStatement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
             preparedStatement.setString(1, username);
@@ -28,7 +30,7 @@ public class SocialMediaDAO {
     public boolean usernameExists(int userID){
         Connection connection = ConnectionUtil.getConnection();
         try{
-            String sql = "SELECT * FROM account WHERE account_id = ?";
+            String sql = "SELECT * FROM account WHERE account_id=?";
 
             PreparedStatement preparedStatement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
             preparedStatement.setInt(1, userID);
@@ -38,12 +40,27 @@ public class SocialMediaDAO {
         }
         catch(SQLException e){
             System.out.println(e.getMessage());
-            // return false;
+        }
+        return false;
+    }
+    public boolean messageIDExists(int messageID){
+        Connection connection = ConnectionUtil.getConnection();
+        try{
+            String sql = "SELECT * FROM message WHERE message_id=?";
+
+            PreparedStatement preparedStatement = connection.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            preparedStatement.setInt(1, messageID);
+
+            ResultSet rs = preparedStatement.executeQuery();
+            return rs.next(); //returns boolean
+        }
+        catch(SQLException e){
+            System.out.println(e.getMessage());
         }
         return false;
     }
     
-    //CREATE NEW USER - CHECK INPUT
+    //## 1: Our API should be able to process new User registrations.
     public Account insertUser(Account account){
         if(account.getUsername().trim().isEmpty() || account.getPassword().length() < 4 || usernameExists(account.getUsername())){
             return null;
@@ -71,7 +88,7 @@ public class SocialMediaDAO {
         }
         return null;
     }
-    //LOGIN USER - CHECK IF USER EXISTS
+    //## 2: Our API should be able to process User logins.
     public Account loginUser(Account account){
         if(!usernameExists(account.getUsername()) || account.getPassword().length() < 4){ //check if username doesnt exist + short password check
             return null;
@@ -80,7 +97,7 @@ public class SocialMediaDAO {
         Connection connection = ConnectionUtil.getConnection();
 
         try{
-            String sql = "SELECT * FROM account WHERE username = ? AND password = ?";
+            String sql = "SELECT * FROM account WHERE username=? AND password=?";
             PreparedStatement preparedStatement = connection.prepareStatement(sql);
 
             preparedStatement.setString(1, account.getUsername());
@@ -97,7 +114,7 @@ public class SocialMediaDAO {
         }
         return null;
     }
-    //ADD NEW MESSAGE - CHECK IF USER EXISTS
+    //## 3: Our API should be able to process the creation of new messages.
     public Message insertMessage(Message message){
         //check message length to fit constraints and if userID exists
         if(message.getMessage_text().trim().isEmpty() || message.getMessage_text().length() > 255 || !usernameExists(message.getPosted_by())){ 
@@ -126,5 +143,139 @@ public class SocialMediaDAO {
         }
         return null;
     }
+
+    //## 4: Our API should be able to retrieve all messages.
+    public List<Message> getAllMessages(){
+        List<Message> allMessages = new ArrayList<>();
+
+        Connection connection = ConnectionUtil.getConnection();
+
+        try {
+            String sql = "SELECT * FROM message";
+
+            PreparedStatement ps = connection.prepareStatement(sql);
+
+            ResultSet rs =  ps.executeQuery();
+            if(rs.next()){
+               Message message = new Message(rs.getInt("message_id"),rs.getInt("posted_by"), rs.getString("message_text"), rs.getLong("time_posted_epoch"));
+                allMessages.add(message);
+            }
+            
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        
+        return allMessages;
+    }
+
+    //## 5: Our API should be able to retrieve a message by its ID.
+    public Message getUserMessageByID(int message_id){
+        Connection connection = ConnectionUtil.getConnection();
+
+        try {
+            String sql = "SELECT * FROM message WHERE message_id=?";
+
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setInt(1, message_id);
+
+            ResultSet rs =  ps.executeQuery();
+            if(rs.next()){
+               return new Message(rs.getInt("message_id"), rs.getInt("posted_by"), rs.getString("message_text"), rs.getLong("time_posted_epoch"));
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        
+        return null;
+    }
+
+    //## 6: Our API should be able to delete a message identified by a message ID.
+    public Message deleteUserMessageByID(int message_id){
+        Connection connection = ConnectionUtil.getConnection();
+
+        try {
+            //store message before deletion to return later
+            String sql = "SELECT * FROM message WHERE message_id=?";
+
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setInt(1, message_id);
+
+            ResultSet rs =  ps.executeQuery();
+            if(rs.next()){
+                String deleteMessageSql = "DELETE FROM message WHERE message_id=?";
+                ps = connection.prepareStatement(deleteMessageSql);
+                ps.setInt(1, message_id);
+                ps.executeUpdate();
+
+            return new Message(rs.getInt("message_id"), rs.getInt("posted_by"), rs.getString("message_text"), rs.getLong("time_posted_epoch"));
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        return null;
+    }
+
+    //## 7: Our API should be able to update a message text identified by a message ID.
+    public Message updateUserMessageByID(String new_message_text, int message_id){
+        if(new_message_text == null|| new_message_text.trim().isEmpty() || new_message_text.length() > 255 || !messageIDExists(message_id)){
+            return null;
+        }
+
+        Connection connection = ConnectionUtil.getConnection();
+
+        try {
+            String selectSql = "SELECT * FROM message WHERE message_id=?";
+
+            PreparedStatement ps = connection.prepareStatement(selectSql);
+            ps.setInt(1, message_id);
+
+            ResultSet rs =  ps.executeQuery();
+            if(!rs.next()) return null; //does not exist
+            
+            //UPDATE
+            String updateMessageSql = "UPDATE message SET message_text=? WHERE message_id=?";
+                ps = connection.prepareStatement(updateMessageSql);
+                ps.setString(1, new_message_text);
+                ps.setInt(2, message_id);
+                ps.executeUpdate();
+
+                //SELECT AGAIN TO RETURN MESSAGE
+                ps = connection.prepareStatement(selectSql);
+                ps.setInt(1, message_id);
+                rs = ps.executeQuery();
+
+            if(rs.next()){
+                return new Message(rs.getInt("message_id"), rs.getInt("posted_by"), new_message_text, rs.getLong("time_posted_epoch"));
+            }
+
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        return null;
+    }
+
+    //## 8: Our API should be able to retrieve all messages written by a particular user.
+    public List<Message> getAllMessagesByUser(int account_id){
+        List<Message> allMessages = new ArrayList<>();
+        Connection connection = ConnectionUtil.getConnection();
+
+        try {
+            String sql = "SELECT * FROM message WHERE posted_by=?";
+
+            PreparedStatement ps = connection.prepareStatement(sql);
+            ps.setInt(1, account_id);
+
+            ResultSet rs =  ps.executeQuery();
+            if(rs.next()){
+               Message message = new Message(rs.getInt("message_id"), rs.getInt("posted_by"), rs.getString("message_text"), rs.getLong("time_posted_epoch"));
+               allMessages.add(message);
+            }
+        } catch (SQLException e) {
+            System.out.println(e.getMessage());
+        }
+        
+        return allMessages;
+    }
+
 
 }
